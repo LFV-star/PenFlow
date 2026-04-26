@@ -1,4 +1,4 @@
-from fastapi import FastAPI, File, UploadFile, HTTPException
+from fastapi import FastAPI, File, UploadFile, Form, HTTPException
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 import io
@@ -8,7 +8,6 @@ from renderer import render_handwritten_pdf
 
 app = FastAPI()
 
-# Allow frontend to talk to backend
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -19,43 +18,43 @@ app.add_middleware(
 
 @app.get("/")
 def root():
-    return {"message": "Handwrite API is running ✅"}
+    return {"message": "Penflow API is running ✅"}
 
 
 @app.post("/convert")
-async def convert(file: UploadFile = File(...)):
-    """
-    Accepts a PDF or DOCX file,
-    extracts the text,
-    renders it as a handwritten PDF,
-    and returns it for download.
-    """
-
-    # Validate file type
+async def convert(
+    file: UploadFile = File(...),
+    font: str = Form(default="caveat"),
+    font_size: int = Form(default=16),
+    ink_color: str = Form(default="black"),
+    paper_style: str = Form(default="blank"),
+):
     if not (file.filename.endswith(".pdf") or file.filename.endswith(".docx")):
         raise HTTPException(
             status_code=400,
             detail="Only PDF and DOCX files are supported."
         )
 
-    # Read file bytes
     file_bytes = await file.read()
 
-    # Extract text
     try:
         text = extract_text(file.filename, file_bytes)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to extract text: {str(e)}")
 
-    # Render handwritten PDF
     try:
-        pdf_bytes = render_handwritten_pdf(text)
+        pdf_bytes = render_handwritten_pdf(
+            text=text,
+            font=font,
+            font_size=font_size,
+            ink_color=ink_color,
+            paper_style=paper_style,
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to render PDF: {str(e)}")
 
-    # Return PDF as downloadable file
     return StreamingResponse(
         io.BytesIO(pdf_bytes),
         media_type="application/pdf",
-        headers={"Content-Disposition": "attachment; filename=handwritten.pdf"}
+        headers={"Content-Disposition": "attachment; filename=penflow-output.pdf"}
     )
