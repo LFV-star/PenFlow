@@ -5,6 +5,7 @@ import io
 
 from document_parser import extract_text
 from renderer import render_handwritten_pdf
+from handwriting_analyzer import analyze_handwriting
 
 app = FastAPI()
 
@@ -21,6 +22,31 @@ def root():
     return {"message": "Penflow API is running ✅"}
 
 
+@app.post("/analyze")
+async def analyze(image: UploadFile = File(...)):
+    """
+    Accepts a handwriting image and returns style characteristics.
+    """
+    allowed = ["image/jpeg", "image/png", "image/jpg"]
+    if image.content_type not in allowed:
+        raise HTTPException(
+            status_code=400,
+            detail="Only JPG and PNG images are supported."
+        )
+
+    image_bytes = await image.read()
+
+    try:
+        style = analyze_handwriting(image_bytes)
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to analyze image: {str(e)}"
+        )
+
+    return style
+
+
 @app.post("/convert")
 async def convert(
     file: UploadFile = File(...),
@@ -28,6 +54,10 @@ async def convert(
     font_size: int = Form(default=16),
     ink_color: str = Form(default="black"),
     paper_style: str = Form(default="blank"),
+    use_personal_style: bool = Form(default=False),
+    slant: float = Form(default=0.0),
+    spacing_factor: float = Form(default=1.0),
+    stroke_weight: str = Form(default="normal"),
 ):
     if not (file.filename.endswith(".pdf") or file.filename.endswith(".docx")):
         raise HTTPException(
@@ -40,7 +70,20 @@ async def convert(
     try:
         text = extract_text(file.filename, file_bytes)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to extract text: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to extract text: {str(e)}"
+        )
+
+    # Build handwriting style if using personal style
+    handwriting_style = None
+    if use_personal_style:
+        handwriting_style = {
+            "font_size": font_size,
+            "slant": slant,
+            "spacing_factor": spacing_factor,
+            "stroke_weight": stroke_weight,
+        }
 
     try:
         pdf_bytes = render_handwritten_pdf(
@@ -49,9 +92,13 @@ async def convert(
             font_size=font_size,
             ink_color=ink_color,
             paper_style=paper_style,
+            handwriting_style=handwriting_style,
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to render PDF: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to render PDF: {str(e)}"
+        )
 
     return StreamingResponse(
         io.BytesIO(pdf_bytes),

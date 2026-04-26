@@ -4,6 +4,7 @@ from reportlab.pdfbase.ttfonts import TTFont
 import textwrap
 import io
 import random
+import math
 
 # Register all handwriting fonts
 pdfmetrics.registerFont(TTFont("Caveat", "Caveat-Regular.ttf"))
@@ -24,7 +25,6 @@ INK_COLORS = {
     "pencil": (0.4, 0.4, 0.4),
 }
 
-# Page settings (A4)
 PAGE_WIDTH = 595
 PAGE_HEIGHT = 842
 MARGIN_LEFT = 72
@@ -34,7 +34,6 @@ MARGIN_BOTTOM = 72
 
 
 def draw_lined_paper(c):
-    """Draw horizontal lines across the page."""
     c.setStrokeColorRGB(0.7, 0.85, 1.0)
     c.setLineWidth(0.5)
     y = PAGE_HEIGHT - MARGIN_TOP
@@ -44,15 +43,12 @@ def draw_lined_paper(c):
 
 
 def draw_grid_paper(c):
-    """Draw a grid across the page."""
     c.setStrokeColorRGB(0.75, 0.85, 1.0)
     c.setLineWidth(0.3)
-    # Horizontal lines
     y = PAGE_HEIGHT - MARGIN_TOP
     while y > MARGIN_BOTTOM:
         c.line(MARGIN_LEFT, y, PAGE_WIDTH - MARGIN_RIGHT, y)
         y -= 20
-    # Vertical lines
     x = MARGIN_LEFT
     while x < PAGE_WIDTH - MARGIN_RIGHT:
         c.line(x, PAGE_HEIGHT - MARGIN_TOP, x, MARGIN_BOTTOM)
@@ -65,18 +61,34 @@ def render_handwritten_pdf(
     font_size: int = 16,
     ink_color: str = "black",
     paper_style: str = "blank",
+    handwriting_style: dict = None,
 ) -> bytes:
     """
-    Renders text as a handwritten-style PDF with customizable settings.
-    Returns the PDF as raw bytes.
+    Renders text as a handwritten-style PDF.
+    If handwriting_style is provided, applies personal style characteristics.
     """
     buffer = io.BytesIO()
     c = canvas.Canvas(buffer, pagesize=(PAGE_WIDTH, PAGE_HEIGHT))
 
-    # Get settings
+    # Apply handwriting style if provided
+    if handwriting_style:
+        font_size = handwriting_style.get("font_size", font_size)
+        slant = handwriting_style.get("slant", 0.0)
+        spacing_factor = handwriting_style.get("spacing_factor", 1.0)
+        stroke_weight = handwriting_style.get("stroke_weight", "normal")
+
+        # Map stroke weight to ink darkness
+        if stroke_weight == "heavy":
+            ink_color = "black"
+        elif stroke_weight == "light":
+            ink_color = "pencil"
+    else:
+        slant = 0.0
+        spacing_factor = 1.0
+
     font_name = FONTS.get(font, "Caveat")
     r, g, b = INK_COLORS.get(ink_color, (0, 0, 0))
-    line_height = font_size * 1.8
+    line_height = font_size * 1.8 * spacing_factor
 
     def draw_page_background():
         if paper_style == "lined":
@@ -84,16 +96,15 @@ def render_handwritten_pdf(
         elif paper_style == "grid":
             draw_grid_paper(c)
 
-    # Draw first page background
     draw_page_background()
-
-    # Set font and ink color
     c.setFont(font_name, font_size)
     c.setFillColorRGB(r, g, b)
 
-    # Wrap text
+    # Apply slant as a canvas transform
+    slant_radians = math.radians(slant * 0.3)
+
     usable_width = PAGE_WIDTH - MARGIN_LEFT - MARGIN_RIGHT
-    chars_per_line = int(usable_width / (font_size * 0.55))
+    chars_per_line = int(usable_width / (font_size * 0.55 * spacing_factor))
     wrapped_lines = []
 
     for paragraph in text.split("\n"):
@@ -113,9 +124,16 @@ def render_handwritten_pdf(
             c.setFillColorRGB(r, g, b)
             y = PAGE_HEIGHT - MARGIN_TOP
 
+        # Natural variation + slant offset
         x_offset = random.uniform(-1.5, 1.5)
         y_offset = random.uniform(-1.0, 1.0)
-        c.drawString(MARGIN_LEFT + x_offset, y + y_offset, line)
+        slant_offset = (PAGE_HEIGHT - y) * math.tan(slant_radians) * 0.05
+
+        c.drawString(
+            MARGIN_LEFT + x_offset + slant_offset,
+            y + y_offset,
+            line
+        )
         y -= line_height
 
     c.save()

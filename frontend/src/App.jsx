@@ -33,6 +33,11 @@ export default function App() {
   const [inkColor, setInkColor] = useState("black");
   const [paperStyle, setPaperStyle] = useState("blank");
 
+  // Personal handwriting
+  const [handwritingImage, setHandwritingImage] = useState(null);
+  const [analyzeStatus, setAnalyzeStatus] = useState("idle");
+  const [personalStyle, setPersonalStyle] = useState(null);
+
   const handleFileChange = (e) => {
     const selected = e.target.files[0];
     if (selected) {
@@ -52,6 +57,31 @@ export default function App() {
     }
   };
 
+  const handleHandwritingImage = (e) => {
+    const selected = e.target.files[0];
+    if (selected) {
+      setHandwritingImage(selected);
+      setAnalyzeStatus("idle");
+      setPersonalStyle(null);
+    }
+  };
+
+  const handleAnalyze = async () => {
+    if (!handwritingImage) return;
+    setAnalyzeStatus("loading");
+
+    const formData = new FormData();
+    formData.append("image", handwritingImage);
+
+    try {
+      const response = await axios.post(`${API_URL}/analyze`, formData);
+      setPersonalStyle(response.data);
+      setAnalyzeStatus("success");
+    } catch (error) {
+      setAnalyzeStatus("error");
+    }
+  };
+
   const handleConvert = async () => {
     if (!file) return;
     setStatus("loading");
@@ -63,6 +93,14 @@ export default function App() {
     formData.append("font_size", fontSize);
     formData.append("ink_color", inkColor);
     formData.append("paper_style", paperStyle);
+
+    // If personal style was analyzed, send it
+    if (personalStyle) {
+      formData.append("use_personal_style", "true");
+      formData.append("slant", personalStyle.slant);
+      formData.append("spacing_factor", personalStyle.spacing_factor);
+      formData.append("stroke_weight", personalStyle.stroke_weight);
+    }
 
     try {
       const response = await axios.post(`${API_URL}/convert`, formData, {
@@ -132,7 +170,6 @@ export default function App() {
         <div style={styles.section}>
           <p style={styles.sectionTitle}>Customize</p>
 
-          {/* Font Style */}
           <div style={styles.field}>
             <label style={styles.label}>Handwriting Style</label>
             <select
@@ -148,7 +185,6 @@ export default function App() {
             </select>
           </div>
 
-          {/* Font Size */}
           <div style={styles.field}>
             <label style={styles.label}>Font Size — {fontSize}px</label>
             <input
@@ -161,7 +197,6 @@ export default function App() {
             />
           </div>
 
-          {/* Ink Color */}
           <div style={styles.field}>
             <label style={styles.label}>Ink Color</label>
             <div style={styles.colorRow}>
@@ -177,17 +212,13 @@ export default function App() {
                     background: inkColor === ink.value ? "#f0f0f0" : "transparent",
                   }}
                 >
-                  <span style={{
-                    ...styles.colorDot,
-                    background: ink.color,
-                  }} />
+                  <span style={{ ...styles.colorDot, background: ink.color }} />
                   {ink.label}
                 </button>
               ))}
             </div>
           </div>
 
-          {/* Paper Style */}
           <div style={styles.field}>
             <label style={styles.label}>Paper Style</label>
             <div style={styles.paperRow}>
@@ -208,6 +239,69 @@ export default function App() {
           </div>
         </div>
 
+        {/* Personal Handwriting Section */}
+        <div style={styles.section}>
+          <p style={styles.sectionTitle}>✍️ Personal Handwriting</p>
+          <p style={styles.sectionDesc}>
+            Upload a photo of your handwriting and we'll match your style.
+          </p>
+
+          <div style={styles.field}>
+            <label style={styles.browseBtn}>
+              {handwritingImage ? handwritingImage.name : "Upload Handwriting Photo"}
+              <input
+                type="file"
+                accept="image/png, image/jpeg"
+                onChange={handleHandwritingImage}
+                style={{ display: "none" }}
+              />
+            </label>
+          </div>
+
+          {handwritingImage && analyzeStatus !== "success" && (
+            <button
+              style={{
+                ...styles.analyzeBtn,
+                opacity: analyzeStatus === "loading" ? 0.6 : 1,
+              }}
+              onClick={handleAnalyze}
+              disabled={analyzeStatus === "loading"}
+            >
+              {analyzeStatus === "loading" ? "Analyzing..." : "Analyze My Handwriting"}
+            </button>
+          )}
+
+          {analyzeStatus === "success" && personalStyle && (
+            <div style={styles.styleResult}>
+              <p style={styles.styleResultTitle}>✅ Handwriting analyzed!</p>
+              <div style={styles.styleGrid}>
+                <div style={styles.styleStat}>
+                  <span style={styles.styleLabel}>Font Size</span>
+                  <span style={styles.styleValue}>{personalStyle.font_size}px</span>
+                </div>
+                <div style={styles.styleStat}>
+                  <span style={styles.styleLabel}>Slant</span>
+                  <span style={styles.styleValue}>{personalStyle.slant}°</span>
+                </div>
+                <div style={styles.styleStat}>
+                  <span style={styles.styleLabel}>Stroke</span>
+                  <span style={styles.styleValue}>{personalStyle.stroke_weight}</span>
+                </div>
+                <div style={styles.styleStat}>
+                  <span style={styles.styleLabel}>Spacing</span>
+                  <span style={styles.styleValue}>{personalStyle.spacing_factor}x</span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {analyzeStatus === "error" && (
+            <div style={styles.errorBox}>
+              ❌ Could not analyze image. Please try a clearer photo.
+            </div>
+          )}
+        </div>
+
         {/* Convert Button */}
         <button
           style={{
@@ -221,14 +315,12 @@ export default function App() {
           {status === "loading" ? "Converting..." : "Convert to Handwriting"}
         </button>
 
-        {/* Success Message */}
         {status === "success" && (
           <div style={styles.successBox}>
             ✅ Your handwritten PDF has been downloaded!
           </div>
         )}
 
-        {/* Error Message */}
         {status === "error" && (
           <div style={styles.errorBox}>
             ❌ {errorMsg}
@@ -309,9 +401,7 @@ const styles = {
     fontSize: "13px",
     marginBottom: "1rem",
   },
-  fileSize: {
-    color: "#888",
-  },
+  fileSize: { color: "#888" },
   section: {
     background: "#fafafa",
     borderRadius: "12px",
@@ -325,11 +415,14 @@ const styles = {
     color: "#888",
     textTransform: "uppercase",
     letterSpacing: "0.05em",
+    marginBottom: "0.5rem",
+  },
+  sectionDesc: {
+    fontSize: "13px",
+    color: "#888",
     marginBottom: "1rem",
   },
-  field: {
-    marginBottom: "1rem",
-  },
+  field: { marginBottom: "1rem" },
   label: {
     display: "block",
     fontSize: "13px",
@@ -346,14 +439,8 @@ const styles = {
     background: "#fff",
     cursor: "pointer",
   },
-  slider: {
-    width: "100%",
-    cursor: "pointer",
-  },
-  colorRow: {
-    display: "flex",
-    gap: "8px",
-  },
+  slider: { width: "100%", cursor: "pointer" },
+  colorRow: { display: "flex", gap: "8px" },
   colorBtn: {
     display: "flex",
     alignItems: "center",
@@ -369,10 +456,7 @@ const styles = {
     borderRadius: "50%",
     display: "inline-block",
   },
-  paperRow: {
-    display: "flex",
-    gap: "8px",
-  },
+  paperRow: { display: "flex", gap: "8px" },
   paperBtn: {
     flex: 1,
     padding: "8px",
@@ -382,6 +466,43 @@ const styles = {
     cursor: "pointer",
     fontWeight: "500",
   },
+  analyzeBtn: {
+    width: "100%",
+    padding: "10px",
+    fontSize: "14px",
+    fontWeight: "500",
+    background: "#f0f4ff",
+    color: "#1a33b3",
+    border: "1px solid #c7d2fe",
+    borderRadius: "8px",
+    cursor: "pointer",
+    marginTop: "0.5rem",
+  },
+  styleResult: {
+    background: "#f0fdf4",
+    border: "1px solid #bbf7d0",
+    borderRadius: "8px",
+    padding: "12px",
+    marginTop: "0.75rem",
+  },
+  styleResultTitle: {
+    fontSize: "13px",
+    fontWeight: "600",
+    color: "#15803d",
+    marginBottom: "8px",
+  },
+  styleGrid: {
+    display: "grid",
+    gridTemplateColumns: "1fr 1fr",
+    gap: "8px",
+  },
+  styleStat: {
+    display: "flex",
+    justifyContent: "space-between",
+    fontSize: "12px",
+  },
+  styleLabel: { color: "#666" },
+  styleValue: { fontWeight: "500", color: "#1a1a1a" },
   convertBtn: {
     width: "100%",
     padding: "13px",
